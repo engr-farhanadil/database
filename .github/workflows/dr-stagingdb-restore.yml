@@ -26,6 +26,11 @@ on:
         options:
           - true
           - false
+      confirm_destroy:
+        description: "Type YES to confirm deletion when action=destroy"
+        required: false
+        default: "NO"
+        type: string
 
 permissions:
   id-token: write
@@ -66,6 +71,7 @@ jobs:
           AZ_PRIMARY: eu-central-2a
           AZ_SECONDARY: eu-central-2b
           AZ_TERTIARY: eu-central-2c
+          CONFIRM_DESTROY: ${{ github.event.inputs.confirm_destroy }}
         run: |
           python3 scripts/dr_staging_db_restore.py \
             --action "${{ github.event.inputs.action }}" \
