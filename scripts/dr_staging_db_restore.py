@@ -21,6 +21,7 @@ DNS_RECORD_NAME = os.getenv("DNS_RECORD_NAME")
 AZ_PRIMARY = os.getenv("AZ_PRIMARY")
 AZ_SECONDARY = os.getenv("AZ_SECONDARY")
 AZ_TERTIARY = os.getenv("AZ_TERTIARY")
+CONFIRM_DESTROY = os.getenv("CONFIRM_DESTROY", "NO").strip().upper()
 
 # =============================================================
 # Initialize clients
@@ -235,9 +236,8 @@ if __name__ == "__main__":
             update_dns_record()
 
     elif args.action == "destroy":
-        confirm_destroy = os.getenv("CONFIRM_DESTROY", "").strip().upper()
-        if confirm_destroy != "YES":
-            print("⚠️ Destruction not confirmed. To destroy the DR cluster, set confirm_destroy=YES when running the workflow.")
+        if CONFIRM_DESTROY != "YES":
+            print("⚠️ Destruction not confirmed! Please type 'YES' in the GitHub UI to proceed with deletion.")
             sys.exit(0)
         destroy_dr_cluster()
 
