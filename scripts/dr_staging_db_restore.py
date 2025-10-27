@@ -2,12 +2,12 @@ import boto3
 import os
 import sys
 import argparse
+from datetime import datetime
 
 # =============================================================
 # Configuration (All values come from workflow environment)
 # =============================================================
-AWS_REGION = "eu-central-2"  # Fixed region
-
+AWS_REGION = "eu-central-2"  # Fixed DR region
 DB_CLUSTER_IDENTIFIER = os.getenv("DB_CLUSTER_IDENTIFIER")
 DB_INSTANCE_IDENTIFIER = os.getenv("DB_INSTANCE_IDENTIFIER")
 DB_ENGINE = os.getenv("DB_ENGINE")
@@ -17,15 +17,13 @@ DB_SUBNET_GROUP_NAME = os.getenv("DB_SUBNET_GROUP_NAME")
 VPC_SECURITY_GROUP_ID = os.getenv("VPC_SECURITY_GROUP_ID")
 HOSTED_ZONE_ID = os.getenv("HOSTED_ZONE_ID")
 DNS_RECORD_NAME = os.getenv("DNS_RECORD_NAME")
+BACKUP_VAULT_NAME = os.getenv("BACKUP_VAULT_NAME", "Default")
 
 AZ_PRIMARY = os.getenv("AZ_PRIMARY")
 AZ_SECONDARY = os.getenv("AZ_SECONDARY")
 AZ_TERTIARY = os.getenv("AZ_TERTIARY")
-CONFIRM_DESTROY = os.getenv("CONFIRM_DESTROY", "NO").strip().upper()
 
-# =============================================================
 # Initialize clients
-# =============================================================
 rds = boto3.client("rds", region_name=AWS_REGION)
 backup = boto3.client("backup", region_name=AWS_REGION)
 route53 = boto3.client("route53", region_name=AWS_REGION)
@@ -38,26 +36,46 @@ AWS_ACCOUNT_ID = sts.get_caller_identity()["Account"]
 
 def get_latest_backup_snapshot():
     """Fetch the latest Aurora snapshot from AWS Backup Vault."""
-    print(f"🔍 Searching AWS Backup in region {AWS_REGION} for latest Aurora snapshot...")
-
-    resource_arn = f"arn:aws:rds:{AWS_REGION}:{AWS_ACCOUNT_ID}:cluster:{DB_CLUSTER_IDENTIFIER}"
+    print(f"🔍 Searching AWS Backup vault '{BACKUP_VAULT_NAME}' in region {AWS_REGION} for latest Aurora snapshot...")
 
     try:
-        response = backup.list_recovery_points_by_resource(ResourceArn=resource_arn)
+        response = backup.list_recovery_points_by_backup_vault(BackupVaultName=BACKUP_VAULT_NAME)
     except Exception as e:
         print(f"❌ Error retrieving recovery points: {e}")
         sys.exit(1)
 
-    recovery_points = response.get("RecoveryPoints", [])
+    recovery_points = [
+        rp for rp in response.get("RecoveryPoints", [])
+        if rp.get("ResourceType") in ["Aurora", "RDS"]
+        and DB_CLUSTER_IDENTIFIER in rp.get("ResourceArn", "")
+    ]
+
     if not recovery_points:
-        print("❌ No recovery points found for this resource in AWS Backup vault.")
+        print(f"❌ No Aurora recovery points found for cluster '{DB_CLUSTER_IDENTIFIER}' in vault '{BACKUP_VAULT_NAME}'.")
         sys.exit(1)
 
     latest = sorted(recovery_points, key=lambda x: x["CreationDate"], reverse=True)[0]
     snapshot_arn = latest["RecoveryPointArn"]
-    print(f"✅ Latest snapshot ARN: {snapshot_arn}")
-    print(f"🕓 Created on: {latest['CreationDate']}")
+    created_time = latest["CreationDate"].strftime("%Y-%m-%d %H:%M:%S")
+
+    print(f"✅ Latest Aurora snapshot ARN: {snapshot_arn}")
+    print(f"🕓 Created on: {created_time}")
     return snapshot_arn
+
+
+def check_existing_cluster():
+    """Check if the DR cluster already exists before restore."""
+    try:
+        clusters = rds.describe_db_clusters(DBClusterIdentifier=DB_CLUSTER_IDENTIFIER)
+        if clusters["DBClusters"]:
+            print(f"⚠️ Cluster '{DB_CLUSTER_IDENTIFIER}' already exists in {AWS_REGION}. Skipping creation.")
+            return True
+    except rds.exceptions.DBClusterNotFoundFault:
+        return False
+    except Exception as e:
+        print(f"❌ Error checking cluster existence: {e}")
+        sys.exit(1)
+    return False
 
 
 def restore_cluster_from_snapshot(snapshot_arn, az_choice):
@@ -117,7 +135,14 @@ def restore_cluster_from_snapshot(snapshot_arn, az_choice):
 
 
 def destroy_dr_cluster():
-    """Delete the DR cluster and instance cleanly."""
+    """Delete the DR cluster and instance cleanly with confirmation."""
+    print("⚠️ WARNING: You are about to delete the DR cluster and instance.")
+
+    confirmation = input("Type 'DESTROY' to confirm: ").strip()
+    if confirmation != "DESTROY":
+        print("❌ Operation cancelled by user.")
+        sys.exit(0)
+
     print("💥 Destroying DR cluster and instance...")
 
     try:
@@ -176,21 +201,6 @@ def update_dns_record():
         sys.exit(1)
 
 
-def check_existing_cluster():
-    """Check if the DR cluster already exists before restore."""
-    try:
-        clusters = rds.describe_db_clusters(DBClusterIdentifier=DB_CLUSTER_IDENTIFIER)
-        if clusters["DBClusters"]:
-            print(f"⚠️ Cluster '{DB_CLUSTER_IDENTIFIER}' already exists in {AWS_REGION}. Skipping creation.")
-            return True
-    except rds.exceptions.DBClusterNotFoundFault:
-        return False
-    except Exception as e:
-        print(f"❌ Error checking cluster existence: {e}")
-        sys.exit(1)
-    return False
-
-
 def print_post_restore_info():
     """Print important endpoints and identifiers after successful restore."""
     print("\n🔎 Post-Restore Verification:")
@@ -205,8 +215,9 @@ def print_post_restore_info():
         print(f"🗂️  Cluster ID:       {DB_CLUSTER_IDENTIFIER}")
         print(f"💡 Instance ID:      {DB_INSTANCE_IDENTIFIER}")
         print(f"🌍 Region:           {AWS_REGION}")
+        print(f"📅 Restored at:      {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
-        print("\nYou can now connect to the DR cluster endpoint using the existing DB credentials from the snapshot.")
+        print("\nYou can now connect to the DR cluster using the existing DB credentials from the snapshot.")
     except Exception as e:
         print(f"⚠️ Unable to fetch post-restore info: {e}")
 
@@ -236,9 +247,6 @@ if __name__ == "__main__":
             update_dns_record()
 
     elif args.action == "destroy":
-        if CONFIRM_DESTROY != "YES":
-            print("⚠️ Destruction not confirmed! Please type 'YES' in the GitHub UI to proceed with deletion.")
-            sys.exit(0)
         destroy_dr_cluster()
 
     print("✅ DR staging database operation completed successfully.")
