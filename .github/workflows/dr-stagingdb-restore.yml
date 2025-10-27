@@ -67,7 +67,7 @@ jobs:
           AZ_SECONDARY: eu-central-2b
           AZ_TERTIARY: eu-central-2c
         run: |
-          python3 scripts/dr_restore.py \
+          python3 scripts/dr_staging_db_restore.py \
             --action "${{ github.event.inputs.action }}" \
             --az_choice "${{ github.event.inputs.az_choice }}" \
             --update_dns "${{ github.event.inputs.update_dns }}"
