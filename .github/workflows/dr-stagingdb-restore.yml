@@ -68,6 +68,7 @@ jobs:
           VPC_SECURITY_GROUP_ID: ${{ secrets.VPC_SECURITY_GROUP_ID }}
           HOSTED_ZONE_ID: ${{ secrets.HOSTED_ZONE_ID }}
           DNS_RECORD_NAME: ${{ secrets.DNS_RECORD_NAME }}
+          BACKUP_VAULT_NAME: disaster-recovery-vault
           AZ_PRIMARY: eu-central-2a
           AZ_SECONDARY: eu-central-2b
           AZ_TERTIARY: eu-central-2c
