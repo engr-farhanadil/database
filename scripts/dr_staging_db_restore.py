@@ -6,7 +6,8 @@ import argparse
 # =============================================================
 # Configuration (All values come from workflow environment)
 # =============================================================
-AWS_REGION = "eu-central-2"  # Region fixed by design
+AWS_REGION = "eu-central-2"  # Fixed region
+
 DB_CLUSTER_IDENTIFIER = os.getenv("DB_CLUSTER_IDENTIFIER")
 DB_INSTANCE_IDENTIFIER = os.getenv("DB_INSTANCE_IDENTIFIER")
 DB_ENGINE = os.getenv("DB_ENGINE")
@@ -21,7 +22,9 @@ AZ_PRIMARY = os.getenv("AZ_PRIMARY")
 AZ_SECONDARY = os.getenv("AZ_SECONDARY")
 AZ_TERTIARY = os.getenv("AZ_TERTIARY")
 
+# =============================================================
 # Initialize clients
+# =============================================================
 rds = boto3.client("rds", region_name=AWS_REGION)
 backup = boto3.client("backup", region_name=AWS_REGION)
 route53 = boto3.client("route53", region_name=AWS_REGION)
@@ -105,7 +108,6 @@ def restore_cluster_from_snapshot(snapshot_arn, az_choice):
         instance_waiter.wait(DBInstanceIdentifier=DB_INSTANCE_IDENTIFIER)
         print("✅ DB instance is now available.")
 
-        # Post-creation verification
         print_post_restore_info()
 
     except Exception as e:
@@ -223,7 +225,7 @@ if __name__ == "__main__":
     print(f"🏗️ AZ Choice: {args.az_choice}")
     print(f"🌐 Update DNS: {args.update_dns}")
 
-        if args.action == "create":
+    if args.action == "create":
         if check_existing_cluster():
             print("⚠️ Skipping restore because the cluster already exists.")
             sys.exit(0)
