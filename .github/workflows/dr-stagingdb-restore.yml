@@ -1,0 +1,72 @@
+name: "DR Staging Database Management"
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose whether to create or destroy the DR cluster"
+        required: true
+        type: choice
+        options:
+          - create
+          - destroy
+      az_choice:
+        description: "Select Availability Zone for DR database"
+        required: true
+        type: choice
+        options:
+          - primary-az
+          - secondary-az
+          - tertiary-az
+      update_dns:
+        description: "Do you want to update DNS after creation?"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - true
+          - false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  dr_database:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::317283686181:role/GitHubActionsDBRestoreRole
+          aws-region: eu-central-2
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install boto3
+
+      - name: Run DR Management Script
+        env:
+          AWS_REGION: eu-central-2
+          DB_CLUSTER_IDENTIFIER: ${{ secrets.DB_CLUSTER_IDENTIFIER }}
+          DB_INSTANCE_IDENTIFIER: ${{ secrets.DB_INSTANCE_IDENTIFIER }}
+          DB_ENGINE: aurora-mysql
+          DB_INSTANCE_CLASS: db.t4g.medium
+          SNAPSHOT_TAG_KEY: Name
+          SNAPSHOT_TAG_VALUE: dev-db-cluster
+          DB_SUBNET_GROUP_NAME: ${{ secrets.DB_SUBNET_GROUP_NAME }}
+          VPC_SECURITY_GROUP_ID: ${{ secrets.VPC_SECURITY_GROUP_ID }}
+          HOSTED_ZONE_ID: ${{ secrets.HOSTED_ZONE_ID }}
+          DNS_RECORD_NAME: ${{ secrets.DNS_RECORD_NAME }}
+          AZ_PRIMARY: eu-central-2a
+          AZ_SECONDARY: eu-central-2b
+          AZ_TERTIARY: eu-central-2c
+        run: |
+          python3 scripts/dr_restore.py \
+            --action "${{ github.event.inputs.action }}" \
+            --az_choice "${{ github.event.inputs.az_choice }}" \
+            --update_dns "${{ github.event.inputs.update_dns }}"
