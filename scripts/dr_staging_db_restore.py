@@ -223,7 +223,7 @@ if __name__ == "__main__":
     print(f"🏗️ AZ Choice: {args.az_choice}")
     print(f"🌐 Update DNS: {args.update_dns}")
 
-    if args.action == "create":
+        if args.action == "create":
         if check_existing_cluster():
             print("⚠️ Skipping restore because the cluster already exists.")
             sys.exit(0)
@@ -232,11 +232,11 @@ if __name__ == "__main__":
         if args.update_dns == "true":
             update_dns_record()
 
-   elif args.action == "destroy":
-    confirm_destroy = os.getenv("CONFIRM_DESTROY", "").strip().upper()
-    if confirm_destroy != "YES":
-        print("⚠️ Destruction not confirmed. To destroy the DR cluster, set confirm_destroy=YES when running the workflow.")
-        sys.exit(0)
-    destroy_dr_cluster()
+    elif args.action == "destroy":
+        confirm_destroy = os.getenv("CONFIRM_DESTROY", "").strip().upper()
+        if confirm_destroy != "YES":
+            print("⚠️ Destruction not confirmed. To destroy the DR cluster, set confirm_destroy=YES when running the workflow.")
+            sys.exit(0)
+        destroy_dr_cluster()
 
     print("✅ DR staging database operation completed successfully.")
