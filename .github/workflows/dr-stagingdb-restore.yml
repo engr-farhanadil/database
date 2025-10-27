@@ -54,8 +54,9 @@ jobs:
           AWS_REGION: eu-central-2
           DB_CLUSTER_IDENTIFIER: ${{ secrets.DB_CLUSTER_IDENTIFIER }}
           DB_INSTANCE_IDENTIFIER: ${{ secrets.DB_INSTANCE_IDENTIFIER }}
-          DB_ENGINE: aurora-mysql
-          DB_INSTANCE_CLASS: db.t4g.medium
+          DB_ENGINE: ${{ secrets.DB_ENGINE }}
+          DB_ENGINE_VERSION: ${{ secrets.DB_ENGINE_VERSION }}
+          DB_INSTANCE_CLASS: ${{ secrets.DB_CLASS }}
           SNAPSHOT_TAG_KEY: Name
           SNAPSHOT_TAG_VALUE: dev-db-cluster
           DB_SUBNET_GROUP_NAME: ${{ secrets.DB_SUBNET_GROUP_NAME }}
