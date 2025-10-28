@@ -62,8 +62,6 @@ jobs:
           DB_ENGINE: ${{ secrets.DB_ENGINE }}
           DB_ENGINE_VERSION: ${{ secrets.DB_ENGINE_VERSION }}
           DB_INSTANCE_CLASS: ${{ secrets.DB_CLASS }}
-          SNAPSHOT_TAG_KEY: Name
-          SNAPSHOT_TAG_VALUE: dev-db-cluster
           DB_SUBNET_GROUP_NAME: ${{ secrets.DB_SUBNET_GROUP_NAME }}
           VPC_SECURITY_GROUP_ID: ${{ secrets.VPC_SECURITY_GROUP_ID }}
           HOSTED_ZONE_ID: ${{ secrets.HOSTED_ZONE_ID }}
