@@ -5,9 +5,9 @@ import argparse
 from datetime import datetime
 
 # =============================================================
-# Configuration (All values come from workflow environment)
+# Configuration (from workflow env)
 # =============================================================
-AWS_REGION = "eu-central-2"  # Fixed DR region
+AWS_REGION = "eu-central-2"
 DB_CLUSTER_IDENTIFIER = os.getenv("DB_CLUSTER_IDENTIFIER")
 DB_INSTANCE_IDENTIFIER = os.getenv("DB_INSTANCE_IDENTIFIER")
 DB_ENGINE = os.getenv("DB_ENGINE")
@@ -23,20 +23,36 @@ AZ_PRIMARY = os.getenv("AZ_PRIMARY")
 AZ_SECONDARY = os.getenv("AZ_SECONDARY")
 AZ_TERTIARY = os.getenv("AZ_TERTIARY")
 
-# Initialize clients
+# AWS Clients
 rds = boto3.client("rds", region_name=AWS_REGION)
 backup = boto3.client("backup", region_name=AWS_REGION)
 route53 = boto3.client("route53", region_name=AWS_REGION)
 sts = boto3.client("sts")
 AWS_ACCOUNT_ID = sts.get_caller_identity()["Account"]
 
+
 # =============================================================
 # Utility Functions
 # =============================================================
 
+def describe_subnet_group():
+    """Describe DB subnet group for diagnostics."""
+    try:
+        resp = rds.describe_db_subnet_groups(DBSubnetGroupName=DB_SUBNET_GROUP_NAME)
+        subnets = resp["DBSubnetGroups"][0]["Subnets"]
+        print(f"🧩 Subnet Group '{DB_SUBNET_GROUP_NAME}' contains the following subnets:")
+        for s in subnets:
+            subnet_id = s["SubnetIdentifier"]
+            az = s["SubnetAvailabilityZone"]["Name"]
+            cidr = s["SubnetOutpostArn"] if "SubnetOutpostArn" in s else "N/A"
+            print(f"   • Subnet {subnet_id} | AZ: {az} | CIDR: {cidr}")
+    except Exception as e:
+        print(f"⚠️ Unable to describe subnet group: {e}")
+
+
 def get_latest_backup_snapshot():
     """Fetch the latest Aurora snapshot from AWS Backup Vault."""
-    print(f"🔍 Searching AWS Backup vault '{BACKUP_VAULT_NAME}' in region {AWS_REGION} for latest Aurora snapshot...")
+    print(f"🔍 Searching AWS Backup vault '{BACKUP_VAULT_NAME}' for latest Aurora snapshot...")
 
     try:
         response = backup.list_recovery_points_by_backup_vault(BackupVaultName=BACKUP_VAULT_NAME)
@@ -44,7 +60,6 @@ def get_latest_backup_snapshot():
         print(f"❌ Error retrieving recovery points: {e}")
         sys.exit(1)
 
-    # Filter only Aurora recovery points that belong to this cluster name
     recovery_points = [
         rp for rp in response.get("RecoveryPoints", [])
         if rp.get("ResourceType") == "Aurora"
@@ -52,40 +67,33 @@ def get_latest_backup_snapshot():
     ]
 
     if not recovery_points:
-        print(f"❌ No Aurora recovery points found for cluster '{DB_CLUSTER_IDENTIFIER}' in vault '{BACKUP_VAULT_NAME}'.")
+        print(f"❌ No Aurora recovery points found for '{DB_CLUSTER_IDENTIFIER}'.")
         sys.exit(1)
 
-    print("📋 Found Aurora recovery points:")
-    for rp in sorted(recovery_points, key=lambda x: x["CreationDate"], reverse=True):
-        print(f"   • {rp['RecoveryPointArn']} | {rp['CreationDate']}")
-
-    # Sort by creation date and pick the latest
     latest = sorted(recovery_points, key=lambda x: x["CreationDate"], reverse=True)[0]
     snapshot_arn = latest["RecoveryPointArn"]
     created_time = latest["CreationDate"].strftime("%Y-%m-%d %H:%M:%S")
 
-    print(f"✅ Latest Aurora snapshot ARN: {snapshot_arn}")
-    print(f"🕓 Created on: {created_time}")
+    print(f"✅ Using latest Aurora snapshot ARN: {snapshot_arn}")
+    print(f"🕓 Snapshot created on: {created_time}")
     return snapshot_arn
 
 
 def check_existing_cluster():
-    """Check if the DR cluster already exists before restore."""
     try:
         clusters = rds.describe_db_clusters(DBClusterIdentifier=DB_CLUSTER_IDENTIFIER)
         if clusters["DBClusters"]:
-            print(f"⚠️ Cluster '{DB_CLUSTER_IDENTIFIER}' already exists in {AWS_REGION}. Skipping creation.")
+            print(f"⚠️ Cluster '{DB_CLUSTER_IDENTIFIER}' already exists. Skipping creation.")
             return True
     except rds.exceptions.DBClusterNotFoundFault:
         return False
     except Exception as e:
-        print(f"❌ Error checking cluster existence: {e}")
+        print(f"❌ Error checking cluster: {e}")
         sys.exit(1)
     return False
 
 
 def restore_cluster_from_snapshot(snapshot_arn, az_choice):
-    """Restore Aurora cluster and instance from AWS Backup snapshot."""
     az_map = {
         "primary-az": AZ_PRIMARY,
         "secondary-az": AZ_SECONDARY,
@@ -94,13 +102,14 @@ def restore_cluster_from_snapshot(snapshot_arn, az_choice):
 
     target_az = az_map.get(az_choice)
     if not target_az:
-        print("❌ Invalid Availability Zone choice. Exiting.")
+        print("❌ Invalid AZ selection.")
         sys.exit(1)
 
-    print(f"🚀 Restoring Aurora cluster in {target_az} from snapshot {snapshot_arn}")
+    print(f"🚀 Restoring Aurora cluster from snapshot in {target_az}...")
+
+    describe_subnet_group()
 
     try:
-        # Restore DB Cluster
         rds.restore_db_cluster_from_snapshot(
             DBClusterIdentifier=DB_CLUSTER_IDENTIFIER,
             SnapshotIdentifier=snapshot_arn,
@@ -108,30 +117,30 @@ def restore_cluster_from_snapshot(snapshot_arn, az_choice):
             EngineVersion=DB_ENGINE_VERSION,
             DBSubnetGroupName=DB_SUBNET_GROUP_NAME,
             VpcSecurityGroupIds=[VPC_SECURITY_GROUP_ID],
-            AvailabilityZones=[target_az],
             DeletionProtection=False,
             CopyTagsToSnapshot=True
         )
 
-        print("⏳ Waiting for DB cluster to become available...")
+        print("⏳ Waiting for cluster to become available...")
         waiter = rds.get_waiter("db_cluster_available")
         waiter.wait(DBClusterIdentifier=DB_CLUSTER_IDENTIFIER)
-        print("✅ DB cluster is now available.")
+        print("✅ Cluster is available.")
 
-        # Create DB instance inside the cluster
-        print("🛠️ Creating DB instance inside the cluster...")
+        # Explicitly enforce target AZ for instance
+        print(f"🛠️ Creating DB instance in {target_az}...")
         rds.create_db_instance(
             DBInstanceIdentifier=DB_INSTANCE_IDENTIFIER,
             DBInstanceClass=DB_INSTANCE_CLASS,
             Engine=DB_ENGINE,
             DBClusterIdentifier=DB_CLUSTER_IDENTIFIER,
             PubliclyAccessible=False,
+            AvailabilityZone=target_az
         )
 
-        print("⏳ Waiting for DB instance to become available...")
+        print("⏳ Waiting for DB instance to be available...")
         instance_waiter = rds.get_waiter("db_instance_available")
         instance_waiter.wait(DBInstanceIdentifier=DB_INSTANCE_IDENTIFIER)
-        print("✅ DB instance is now available.")
+        print(f"✅ DB instance is now available in {target_az}.")
 
         print_post_restore_info()
 
@@ -141,49 +150,41 @@ def restore_cluster_from_snapshot(snapshot_arn, az_choice):
 
 
 def destroy_dr_cluster():
-    """Delete the DR cluster and instance cleanly with confirmation."""
-    print("⚠️ WARNING: You are about to delete the DR cluster and instance.")
+    print("⚠️ WARNING: You are about to delete the DR cluster.")
 
     confirmation = os.getenv("CONFIRM_DESTROY", "NO").strip().upper()
     if confirmation != "YES":
-        print("❌ Destruction aborted. You must set confirm_destroy=YES in the workflow to proceed.")
+        print("❌ Destruction aborted. Must confirm with YES.")
         sys.exit(0)
 
-    print("💥 Destroying DR cluster and instance...")
-
     try:
-        # Delete instance first
+        print("💥 Deleting DB instance...")
         rds.delete_db_instance(
             DBInstanceIdentifier=DB_INSTANCE_IDENTIFIER,
             SkipFinalSnapshot=True
         )
-        print("⏳ Waiting for DB instance to be deleted...")
         instance_waiter = rds.get_waiter("db_instance_deleted")
         instance_waiter.wait(DBInstanceIdentifier=DB_INSTANCE_IDENTIFIER)
-        print("✅ DB instance deleted successfully.")
+        print("✅ DB instance deleted.")
 
-        # Then delete cluster
+        print("💥 Deleting DB cluster...")
         rds.delete_db_cluster(
             DBClusterIdentifier=DB_CLUSTER_IDENTIFIER,
             SkipFinalSnapshot=True
         )
-        print("⏳ Waiting for DB cluster to be deleted...")
         cluster_waiter = rds.get_waiter("db_cluster_deleted")
         cluster_waiter.wait(DBClusterIdentifier=DB_CLUSTER_IDENTIFIER)
-        print("✅ DB cluster deleted successfully.")
-
+        print("✅ DB cluster deleted.")
     except Exception as e:
-        print(f"❌ Error during deletion: {e}")
+        print(f"❌ Error deleting cluster: {e}")
         sys.exit(1)
 
 
 def update_dns_record():
-    """Update Route53 record to point to the new cluster endpoint."""
     print("🌐 Updating Route53 DNS record...")
-
     try:
-        cluster_info = rds.describe_db_clusters(DBClusterIdentifier=DB_CLUSTER_IDENTIFIER)
-        endpoint = cluster_info["DBClusters"][0]["Endpoint"]
+        cluster = rds.describe_db_clusters(DBClusterIdentifier=DB_CLUSTER_IDENTIFIER)
+        endpoint = cluster["DBClusters"][0]["Endpoint"]
 
         route53.change_resource_record_sets(
             HostedZoneId=HOSTED_ZONE_ID,
@@ -201,37 +202,31 @@ def update_dns_record():
                 ]
             }
         )
-
-        print(f"✅ DNS record updated successfully to {endpoint}")
-
+        print(f"✅ DNS updated → {DNS_RECORD_NAME} → {endpoint}")
     except Exception as e:
-        print(f"❌ Error updating DNS record: {e}")
+        print(f"❌ Error updating DNS: {e}")
         sys.exit(1)
 
 
 def print_post_restore_info():
-    """Print important endpoints and identifiers after successful restore."""
-    print("\n🔎 Post-Restore Verification:")
-
     try:
         cluster = rds.describe_db_clusters(DBClusterIdentifier=DB_CLUSTER_IDENTIFIER)["DBClusters"][0]
         cluster_endpoint = cluster["Endpoint"]
         reader_endpoint = cluster.get("ReaderEndpoint", "N/A")
 
+        print("\n🔎 Post-Restore Info:")
         print(f"✅ Cluster Endpoint: {cluster_endpoint}")
         print(f"📚 Reader Endpoint:  {reader_endpoint}")
-        print(f"🗂️  Cluster ID:       {DB_CLUSTER_IDENTIFIER}")
+        print(f"🗂️ Cluster ID:       {DB_CLUSTER_IDENTIFIER}")
         print(f"💡 Instance ID:      {DB_INSTANCE_IDENTIFIER}")
-        print(f"🌍 Region:           {AWS_REGION}")
-        print(f"📅 Restored at:      {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-
-        print("\nYou can now connect to the DR cluster using the existing DB credentials from the snapshot.")
+        print(f"📍 Region:           {AWS_REGION}")
+        print(f"📅 Restored:         {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
     except Exception as e:
-        print(f"⚠️ Unable to fetch post-restore info: {e}")
+        print(f"⚠️ Unable to fetch restore info: {e}")
 
 
 # =============================================================
-# Main Execution
+# Main
 # =============================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Aurora DR Automation Script")
@@ -247,7 +242,7 @@ if __name__ == "__main__":
 
     if args.action == "create":
         if check_existing_cluster():
-            print("⚠️ Skipping restore because the cluster already exists.")
+            print("⚠️ Cluster already exists — skipping restore.")
             sys.exit(0)
         snapshot_arn = get_latest_backup_snapshot()
         restore_cluster_from_snapshot(snapshot_arn, args.az_choice)
