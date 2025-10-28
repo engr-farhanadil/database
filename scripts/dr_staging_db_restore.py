@@ -5,9 +5,10 @@ import argparse
 from datetime import datetime
 
 # =============================================================
-# Configuration (All values come from workflow environment)
+# Configuration (Values passed from GitHub Actions workflow)
 # =============================================================
 AWS_REGION = "eu-central-2"  # Fixed DR region
+
 DB_CLUSTER_IDENTIFIER = os.getenv("DB_CLUSTER_IDENTIFIER")
 DB_INSTANCE_IDENTIFIER = os.getenv("DB_INSTANCE_IDENTIFIER")
 DB_ENGINE = os.getenv("DB_ENGINE")
@@ -17,13 +18,21 @@ DB_SUBNET_GROUP_NAME = os.getenv("DB_SUBNET_GROUP_NAME")
 VPC_SECURITY_GROUP_ID = os.getenv("VPC_SECURITY_GROUP_ID")
 HOSTED_ZONE_ID = os.getenv("HOSTED_ZONE_ID")
 DNS_RECORD_NAME = os.getenv("DNS_RECORD_NAME")
-BACKUP_VAULT_NAME = os.getenv("BACKUP_VAULT_NAME", "Default")
 
+# Set DR Backup Vault Name (default is disaster-recovery-vault)
+BACKUP_VAULT_NAME = os.getenv("BACKUP_VAULT_NAME", "disaster-recovery-vault")
+
+# Availability Zones
 AZ_PRIMARY = os.getenv("AZ_PRIMARY")
 AZ_SECONDARY = os.getenv("AZ_SECONDARY")
 AZ_TERTIARY = os.getenv("AZ_TERTIARY")
 
-# Initialize clients
+# Destroy confirmation input (from workflow)
+CONFIRM_DESTROY = os.getenv("CONFIRM_DESTROY", "NO").strip().upper()
+
+# =============================================================
+# AWS Clients
+# =============================================================
 rds = boto3.client("rds", region_name=AWS_REGION)
 backup = boto3.client("backup", region_name=AWS_REGION)
 route53 = boto3.client("route53", region_name=AWS_REGION)
@@ -135,17 +144,25 @@ def restore_cluster_from_snapshot(snapshot_arn, az_choice):
 
 
 def destroy_dr_cluster():
-    """Delete the DR cluster and instance cleanly with confirmation."""
+    """Delete the DR cluster and instance cleanly with safe confirmation."""
     print("⚠️ WARNING: You are about to delete the DR cluster and instance.")
 
-    confirmation = input("Type 'DESTROY' to confirm: ").strip()
-    if confirmation != "DESTROY":
-        print("❌ Operation cancelled by user.")
-        sys.exit(0)
+    # Non-interactive confirmation (for GitHub Actions)
+    if CONFIRM_DESTROY != "YES":
+        try:
+            # Allow manual confirmation if run locally
+            confirmation = input("Type 'DESTROY' to confirm: ").strip().upper()
+            if confirmation != "DESTROY":
+                print("❌ Operation cancelled by user.")
+                sys.exit(0)
+        except EOFError:
+            print("❌ Operation cancelled: confirmation not provided via workflow input (confirm_destroy=YES).")
+            sys.exit(0)
 
     print("💥 Destroying DR cluster and instance...")
 
     try:
+        # Delete DB instance
         rds.delete_db_instance(
             DBInstanceIdentifier=DB_INSTANCE_IDENTIFIER,
             SkipFinalSnapshot=True
@@ -155,6 +172,7 @@ def destroy_dr_cluster():
         instance_waiter.wait(DBInstanceIdentifier=DB_INSTANCE_IDENTIFIER)
         print("✅ DB instance deleted successfully.")
 
+        # Delete DB cluster
         rds.delete_db_cluster(
             DBClusterIdentifier=DB_CLUSTER_IDENTIFIER,
             SkipFinalSnapshot=True
@@ -216,7 +234,6 @@ def print_post_restore_info():
         print(f"💡 Instance ID:      {DB_INSTANCE_IDENTIFIER}")
         print(f"🌍 Region:           {AWS_REGION}")
         print(f"📅 Restored at:      {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-
         print("\nYou can now connect to the DR cluster using the existing DB credentials from the snapshot.")
     except Exception as e:
         print(f"⚠️ Unable to fetch post-restore info: {e}")
