@@ -45,7 +45,7 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::54317865431:role/Example
+          role-to-assume: arn:aws:iam::317283686181:role/GitHubActionsDBRestoreRole
           aws-region: eu-central-2
 
       - run: pip install boto3 requests
