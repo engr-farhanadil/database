@@ -1,0 +1,77 @@
+name: DR Production Database Restore
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Create or destroy DR cluster"
+        required: true
+        type: choice
+        options: [create, destroy]
+
+      writer_az:
+        description: "Writer AZ"
+        required: true
+        type: choice
+        options: [primary-az, secondary-az, tertiary-az]
+
+      reader_az:
+        description: "Reader AZ"
+        required: true
+        type: choice
+        options: [primary-az, secondary-az, tertiary-az]
+
+      update_dns:
+        description: "Update DNS?"
+        required: true
+        type: choice
+        options: [true, false]
+
+      confirm_destroy:
+        description: "Type YES to confirm delete"
+        required: false
+        default: "NO"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  dr_prod_db:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::54317865431:role/Example
+          aws-region: eu-central-2
+
+      - run: pip install boto3 requests
+
+      - name: Run DR Script
+        env:
+          PROD_DB_CLUSTER_IDENTIFIER: ${{ secrets.PROD_DB_CLUSTER_IDENTIFIER }}
+          PROD_DB_WRITER_IDENTIFIER: ${{ secrets.PROD_DB_WRITER_IDENTIFIER }}
+          PROD_DB_READER_IDENTIFIER: ${{ secrets.PROD_DB_READER_IDENTIFIER }}
+          PROD_DB_ENGINE: ${{ secrets.PROD_DB_ENGINE }}
+          PROD_DB_ENGINE_VERSION: ${{ secrets.PROD_DB_ENGINE_VERSION }}
+          PROD_DB_CLASS: ${{ secrets.PROD_DB_CLASS }}
+          PROD_DB_SUBNET_GROUP_NAME: ${{ secrets.PROD_DB_SUBNET_GROUP_NAME }}
+          PROD_VPC_SECURITY_GROUP_ID: ${{ secrets.PROD_VPC_SECURITY_GROUP_ID }}
+          PROD_HOSTED_ZONE_ID: ${{ secrets.PROD_HOSTED_ZONE_ID }}
+          PROD_DNS_RECORD_NAME: ${{ secrets.PROD_DNS_RECORD_NAME }}
+          BACKUP_VAULT_NAME: disaster-recovery-vault
+          PROD_AZ_PRIMARY: eu-central-2a
+          PROD_AZ_SECONDARY: eu-central-2b
+          PROD_AZ_TERTIARY: eu-central-2c
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          CONFIRM_DESTROY: ${{ github.event.inputs.confirm_destroy }}
+
+        run: |
+          python3 dr_prod_db_restore.py \
+            --action "${{ github.event.inputs.action }}" \
+            --writer_az "${{ github.event.inputs.writer_az }}" \
+            --reader_az "${{ github.event.inputs.reader_az }}" \
+            --update_dns "${{ github.event.inputs.update_dns }}"
