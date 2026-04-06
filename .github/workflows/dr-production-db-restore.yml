@@ -24,6 +24,7 @@ on:
       update_dns:
         description: "Do you want to update DNS after creation?"
         required: true
+        default: "false"
         type: choice
         options: [true, false]
 
