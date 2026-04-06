@@ -4,31 +4,31 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: "Create or destroy DR cluster"
+        description: "Choose whether to create or destroy the DR cluster"
         required: true
         type: choice
         options: [create, destroy]
 
       writer_az:
-        description: "Writer AZ"
+        description: "Select Availability Zone for Writer AZ"
         required: true
         type: choice
         options: [primary-az, secondary-az, tertiary-az]
 
       reader_az:
-        description: "Reader AZ"
+        description: "Select Availability Zone for Reader AZ"
         required: true
         type: choice
         options: [primary-az, secondary-az, tertiary-az]
 
       update_dns:
-        description: "Update DNS?"
+        description: "Do you want to update DNS after creation?"
         required: true
         type: choice
         options: [true, false]
 
       confirm_destroy:
-        description: "Type YES to confirm delete"
+        description: "Type YES to confirm deletion when action=destroy"
         required: false
         default: "NO"
 
