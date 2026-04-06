@@ -32,6 +32,7 @@ on:
         description: "Type YES to confirm deletion when action=destroy"
         required: false
         default: "NO"
+        type: string
 
 permissions:
   id-token: write
