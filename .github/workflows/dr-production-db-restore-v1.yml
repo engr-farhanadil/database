@@ -1,4 +1,4 @@
-name: DR Production Database Restore
+name: Production Database Restore - DR
 
 on:
   workflow_dispatch:
