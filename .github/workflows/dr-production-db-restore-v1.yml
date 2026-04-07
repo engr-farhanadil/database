@@ -1,31 +1,42 @@
-name: DR Production Database
+name: DR Production Database Restore
 
 on:
   workflow_dispatch:
     inputs:
       action:
+        description: "Choose whether to create or destroy the DR cluster"
+        required: true
         type: choice
         options: [create, destroy]
-        required: true
 
       writer_az:
+        description: "Select Availability Zone for Writer AZ"
+        required: true
         type: choice
         options: [primary-az, secondary-az, tertiary-az]
-        required: true
 
       reader_az:
+        description: "Select Availability Zone for Reader AZ"
+        required: true
         type: choice
         options: [primary-az, secondary-az, tertiary-az]
-        required: true
 
       update_dns:
+        description: "Do you want to update DNS after creation?"
+        required: true
+        default: "false"
         type: choice
         options: [true, false]
-        required: true
 
       confirm_destroy:
-        type: string
+        description: "Type YES to confirm deletion when action=destroy"
+        required: false
         default: "NO"
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   dr_prod:
