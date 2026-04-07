@@ -53,7 +53,7 @@ jobs:
       - run: pip install boto3 requests
 
       - run: |
-          python3 dr_prod_db_restore.py \
+          python3 dr_prod_db_restore_v1.py \
             --action "${{ github.event.inputs.action }}" \
             --writer_az "${{ github.event.inputs.writer_az }}" \
             --reader_az "${{ github.event.inputs.reader_az }}" \
