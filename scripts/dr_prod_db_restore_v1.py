@@ -37,6 +37,8 @@ SLACK_WEBHOOK = os.getenv("SLACK_WEBHOOK")
 rds = boto3.client("rds", region_name=AWS_REGION)
 backup = boto3.client("backup", region_name=AWS_REGION)
 route53 = boto3.client("route53", region_name=AWS_REGION)
+sts = boto3.client("sts")
+AWS_ACCOUNT_ID = sts.get_caller_identity()["Account"]
 
 
 # =============================================================
