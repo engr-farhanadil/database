@@ -97,7 +97,6 @@ def create_instances(writer_az, reader_az):
     rds.create_db_instance(
         DBInstanceIdentifier=DB_WRITER_IDENTIFIER,
         DBInstanceClass=DB_INSTANCE_CLASS,
-        Engine=DB_ENGINE,
         DBClusterIdentifier=DB_CLUSTER_IDENTIFIER,
         AvailabilityZone=writer_az
     )
@@ -105,7 +104,6 @@ def create_instances(writer_az, reader_az):
     rds.create_db_instance(
         DBInstanceIdentifier=DB_READER_IDENTIFIER,
         DBInstanceClass=DB_INSTANCE_CLASS,
-        Engine=DB_ENGINE,
         DBClusterIdentifier=DB_CLUSTER_IDENTIFIER,
         AvailabilityZone=reader_az
     )
