@@ -159,7 +159,7 @@ def send_slack():
 
     payload = {
         "text": f"""
-✅ PROD Aurora Restore Completed
+✅ Production Database Restore Completed in Secondary Region i.e., EU-CENTRAL-2
 
 Cluster: {DB_CLUSTER_IDENTIFIER}
 Writer: {cluster['Endpoint']}
