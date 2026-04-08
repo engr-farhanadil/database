@@ -71,6 +71,7 @@ jobs:
           PROD_WRITER_DNS_RECORD: ${{ secrets.PROD_WRITER_DNS_RECORD }}
           PROD_READER_DNS_RECORD: ${{ secrets.PROD_READER_DNS_RECORD }}
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          PROD_DB_CLUSTER_PARAMETER_GROUP: ${{ secrets.PROD_DB_CLUSTER_PARAMETER_GROUP }}
           BACKUP_VAULT_NAME: disaster-recovery-vault
           PROD_AZ_PRIMARY: eu-central-2a
           PROD_AZ_SECONDARY: eu-central-2b
